@@ -1,0 +1,13 @@
+.build
+.git
+.gitignore
+.swiftpm
+.vscode
+.env
+.env.*
+README.md
+*.md
+.DS_Store
+docker-compose.yml
+# Tests are not needed to produce the release binary.
+Tests

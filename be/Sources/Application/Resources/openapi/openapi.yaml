@@ -1,0 +1,416 @@
+openapi: 3.0.3
+info:
+  title: Task Tracker API
+  version: 1.0.0
+  description: |
+    Jira-style task API for iOS. Base path `/api/v1`.
+    Auth: `Authorization: Bearer <accessToken>` except `/auth/login`, `/auth/refresh`, `/health`.
+servers:
+  - url: http://localhost:8080/api/v1
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnvelopeHealth" }
+  /auth/login:
+    post:
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Tokens
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnvelopeLogin" }
+  /auth/refresh:
+    post:
+      summary: Refresh tokens (rotation)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        "200":
+          description: New pair
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnvelopeRefresh" }
+  /auth/logout:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Logout (revoke refresh)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        "200":
+          description: OK
+  /auth/me:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Current user
+      responses:
+        "200":
+          description: OK
+  /roles:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/perPage"
+        - $ref: "#/components/parameters/sortBy"
+        - $ref: "#/components/parameters/sortOrder"
+        - $ref: "#/components/parameters/search"
+      summary: List roles
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Create role (admin)
+  /roles/{roleId}:
+    parameters:
+      - name: roleId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Update role
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Delete role
+  /roles/{roleId}/permissions:
+    parameters:
+      - name: roleId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      security: [{ bearerAuth: [] }]
+      summary: Replace role permissions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                permissions:
+                  type: array
+                  items: { type: string }
+  /users:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/perPage"
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: roleId
+          in: query
+          schema: { type: string, format: uuid }
+      summary: List users
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Create user
+  /users/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Get user
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Update user
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Soft-delete user
+  /projects:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List projects
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Create project
+  /projects/{projectId}:
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Project details
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Update project
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Archive project
+  /projects/{projectId}/members:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Add member
+  /projects/{projectId}/members/{memberUserId}:
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Remove member
+  /projects/{projectId}/epics:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List epics
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Create epic
+  /epics/{epicId}:
+    parameters:
+      - name: epicId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Epic details
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Update epic
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Archive epic
+  /epics/{epicId}/tasks/{taskId}:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Link task to epic
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Unlink task
+  /tasks:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List tasks (filters projectId, assigneeId, status, epicId, search, pagination)
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Create task
+  /tasks/{taskId}:
+    parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Task details
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Partial update
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Archive task
+  /tasks/{taskId}/assign:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Assign task
+  /tasks/{taskId}/estimate:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Set estimate (minutes)
+  /tasks/{taskId}/status:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Change status (optional comment creates Comment)
+  /tasks/{taskId}/subtasks:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List subtasks
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Create subtask
+  /tasks/{taskId}/comments:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List comments
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Add comment
+  /tasks/{taskId}/time-entries:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List time entries
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Log time
+  /time-entries/{timeEntryId}:
+    parameters:
+      - name: timeEntryId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Update time entry
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Delete time entry
+  /boards:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List boards (optional ?projectId=)
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Create board
+  /boards/{boardId}:
+    parameters:
+      - name: boardId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: Board + columns
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Update board
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Archive board
+  /boards/{boardId}/columns:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List columns
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Create column
+  /columns/{columnId}:
+    parameters:
+      - name: columnId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Update column
+    delete:
+      security: [{ bearerAuth: [] }]
+      summary: Delete column
+  /boards/{boardId}/tasks/{taskId}/move:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Move task to column + orderIndex
+  /boards/{boardId}/tasks/{taskId}/reorder:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Reorder within column
+  /notifications:
+    get:
+      security: [{ bearerAuth: [] }]
+      summary: List my notifications
+  /notifications/{notificationId}/read:
+    patch:
+      security: [{ bearerAuth: [] }]
+      summary: Mark read
+  /notifications/read-all:
+    post:
+      security: [{ bearerAuth: [] }]
+      summary: Mark all read
+  /search:
+    get:
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: type
+          in: query
+          schema: { type: string, enum: [project, epic, task, user] }
+      summary: Global search
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1 }
+    perPage:
+      name: perPage
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100 }
+    sortBy:
+      name: sortBy
+      in: query
+      schema: { type: string }
+    sortOrder:
+      name: sortOrder
+      in: query
+      schema: { type: string, enum: [asc, desc] }
+    search:
+      name: search
+      in: query
+      schema: { type: string }
+  schemas:
+    ApiEnvelope:
+      type: object
+      required: [success, data, meta, error]
+      properties:
+        success: { type: boolean }
+        data: {}
+        meta:
+          type: object
+          nullable: true
+          properties:
+            page: { type: integer }
+            perPage: { type: integer }
+            total: { type: integer }
+        error:
+          nullable: true
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details:
+              type: array
+              items: { type: string }
+    EnvelopeHealth:
+      allOf:
+        - $ref: "#/components/schemas/ApiEnvelope"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                status: { type: string }
+                service: { type: string }
+                database: { type: string }
+    EnvelopeLogin:
+      type: object
+      description: success envelope with user + tokens
+    EnvelopeRefresh:
+      type: object
+      description: success envelope with accessToken + refreshToken
