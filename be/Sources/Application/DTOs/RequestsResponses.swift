@@ -40,6 +40,7 @@ struct UserCreateRequest: Content {
     var fullName: String
     var roleId: UUID
     var isActive: Bool?
+    var projectIds: [UUID]?
 }
 
 struct UserUpdateRequest: Content {
@@ -47,6 +48,11 @@ struct UserUpdateRequest: Content {
     var avatarUrl: String?
     var roleId: UUID?
     var isActive: Bool?
+    var projectIds: [UUID]?
+}
+
+struct UserProjectsPutRequest: Content {
+    var projectIds: [UUID]
 }
 
 struct UserListQuery: Content {
@@ -56,6 +62,32 @@ struct UserListQuery: Content {
     var sortOrder: String?
     var search: String?
     var roleId: UUID?
+}
+
+// MARK: - Shop
+
+struct ShopItemCreateRequest: Content {
+    var name: String
+    var description: String
+    var pricePoints: Int
+    var isObsolete: Bool?
+}
+
+struct ShopItemUpdateRequest: Content {
+    var name: String?
+    var description: String?
+    var pricePoints: Int?
+    var isObsolete: Bool?
+    var isActive: Bool?
+}
+
+struct ShopOrderCreateRequest: Content {
+    var itemId: UUID
+    var deliveryAddress: String
+}
+
+struct ShopOrderStatusRequest: Content {
+    var status: String
 }
 
 // MARK: - Projects

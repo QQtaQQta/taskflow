@@ -21,6 +21,7 @@ struct User: Codable, Identifiable, Hashable {
     let fullName: String
     let role: Role
     let permissions: [String]?
+    let pointsBalance: Int?
 }
 
 struct LoginRequest: Codable {
@@ -120,11 +121,29 @@ struct UserListItem: Codable, Identifiable, Hashable {
     let role: Role
 }
 
+struct ProjectRef: Codable, Identifiable, Hashable {
+    let id: UUID
+    let key: String
+    let name: String
+}
+
+struct UserDetail: Codable {
+    let id: UUID
+    let email: String
+    let fullName: String
+    let avatarUrl: String?
+    let isActive: Bool
+    let role: Role
+    let projectsCount: Int
+    let projects: [ProjectRef]
+}
+
 struct UpdateUserRequest: Codable {
     let fullName: String?
     let avatarUrl: String?
     let roleId: UUID?
     let isActive: Bool?
+    let projectIds: [UUID]?
 }
 
 struct CreateUserRequest: Codable {
@@ -133,6 +152,70 @@ struct CreateUserRequest: Codable {
     let fullName: String
     let roleId: UUID
     let isActive: Bool?
+    let projectIds: [UUID]?
+}
+
+struct UserProjectsPutRequest: Codable {
+    let projectIds: [UUID]
+}
+
+struct ShopItem: Codable, Identifiable, Hashable {
+    let id: UUID
+    let name: String
+    let description: String
+    let pricePoints: Int
+    let isObsolete: Bool
+    let isActive: Bool?
+
+    var isOrderable: Bool { (isActive ?? true) && !isObsolete }
+}
+
+struct ShopOrder: Codable, Identifiable, Hashable {
+    let id: UUID
+    let itemId: UUID
+    let itemName: String
+    let userId: UUID
+    let userFullName: String
+    let deliveryAddress: String
+    let status: String
+    let createdAt: Date?
+
+    var localizedStatus: String {
+        switch status {
+        case "assembling": return "В сборке"
+        case "shipped": return "Отправлен"
+        case "received": return "Получен"
+        default: return status
+        }
+    }
+}
+
+struct CreateShopItemRequest: Codable {
+    let name: String
+    let description: String
+    let pricePoints: Int
+    let isObsolete: Bool?
+}
+
+struct UpdateShopItemRequest: Codable {
+    let name: String?
+    let description: String?
+    let pricePoints: Int?
+    let isObsolete: Bool?
+    let isActive: Bool?
+}
+
+struct CreateShopOrderRequest: Codable {
+    let itemId: UUID
+    let deliveryAddress: String
+}
+
+struct ShopOrderStatusRequest: Codable {
+    let status: String
+}
+
+struct PointsBalanceResponse: Codable {
+    let pointsBalance: Int
 }
 
 struct RolePermissionUpdateRequest: Codable {

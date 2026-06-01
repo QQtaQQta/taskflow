@@ -69,7 +69,7 @@ final class TaskFlowTests: XCTestCase {
 
     func testCreateUserRequestEncodesCamelCase() throws {
         let roleId = UUID()
-        let req = CreateUserRequest(email: "a@b.com", password: "Password123!", fullName: "User Name", roleId: roleId, isActive: true)
+        let req = CreateUserRequest(email: "a@b.com", password: "Password123!", fullName: "User Name", roleId: roleId, isActive: true, projectIds: nil)
         let data = try makeEncoder().encode(req)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(json["fullName"] as? String, "User Name")
@@ -81,7 +81,7 @@ final class TaskFlowTests: XCTestCase {
 
     func testUpdateUserRequestEncodesCamelCase() throws {
         let roleId = UUID()
-        let req = UpdateUserRequest(fullName: "New", avatarUrl: nil, roleId: roleId, isActive: false)
+        let req = UpdateUserRequest(fullName: "New", avatarUrl: nil, roleId: roleId, isActive: false, projectIds: nil)
         let data = try makeEncoder().encode(req)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(json["fullName"] as? String, "New")

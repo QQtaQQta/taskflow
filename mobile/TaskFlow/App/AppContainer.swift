@@ -107,6 +107,7 @@ final class AppContainer: ObservableObject {
     let boardRepository: BoardRepository
     let timeRepository: TimeTrackingRepository
     let adminRepository: AdminRepository
+    let shopRepository: ShopRepository
 
     @Published var authState: AuthState = .loggedOut
 
@@ -127,6 +128,7 @@ final class AppContainer: ObservableObject {
         self.boardRepository = BoardRepositoryImpl(client: apiClient)
         self.timeRepository = TimeTrackingRepositoryImpl(client: apiClient)
         self.adminRepository = AdminRepositoryImpl(client: apiClient)
+        self.shopRepository = ShopRepositoryImpl(client: apiClient)
     }
 
     static func bootstrap() -> AppContainer {
@@ -196,6 +198,13 @@ struct MainTabView: View {
             }
             .tabItem {
                 Label("Доски", systemImage: "rectangle.3.group")
+            }
+
+            NavigationStack {
+                ShopView(viewModel: .init(shopRepository: container.shopRepository, authRepository: container.authRepository))
+            }
+            .tabItem {
+                Label("Магазин", systemImage: "bag")
             }
 
             NavigationStack {

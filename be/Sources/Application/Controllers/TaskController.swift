@@ -269,6 +269,9 @@ enum TaskController {
         task.status = body.status
         if body.status == "done" || body.status == "closed" { task.closedAt = Date() }
         try await task.save(on: req.db)
+        if body.status == "done" || body.status == "closed" {
+            try await PointsService.awardForTaskCompletion(taskId: tid, on: req.db)
+        }
         if let c = body.comment, !c.isEmpty {
             let com = Comment(taskID: tid, authorID: uid, body: c)
             try await com.save(on: req.db)

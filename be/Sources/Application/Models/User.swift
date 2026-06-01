@@ -25,6 +25,9 @@ final class User: Model, Content, @unchecked Sendable {
     @Field(key: "is_active")
     var isActive: Bool
 
+    @Field(key: "points_balance")
+    var pointsBalance: Int
+
     @OptionalField(key: "deleted_at")
     var deletedAt: Date?
 
@@ -43,7 +46,8 @@ final class User: Model, Content, @unchecked Sendable {
         fullName: String,
         avatarUrl: String? = nil,
         roleID: UUID,
-        isActive: Bool = true
+        isActive: Bool = true,
+        pointsBalance: Int = 0
     ) {
         self.id = id
         self.email = email
@@ -52,6 +56,7 @@ final class User: Model, Content, @unchecked Sendable {
         self.avatarUrl = avatarUrl
         self.$role.id = roleID
         self.isActive = isActive
+        self.pointsBalance = pointsBalance
     }
 }
 

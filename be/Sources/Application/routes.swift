@@ -52,12 +52,26 @@ public func routes(_ app: Application) async throws {
 
     let users = jwt.grouped("users")
     users.get(use: UserController.list)
+    users.get("assignable-projects", use: UserController.assignableProjects)
     users.post(use: UserController.create)
     users.group(":userId") { u in
         u.get(use: UserController.get)
         u.patch(use: UserController.update)
         u.delete(use: UserController.delete)
+        u.get("projects", use: UserController.userProjects)
+        u.put("projects", use: UserController.replaceUserProjects)
     }
+
+    let shop = jwt.grouped("shop")
+    shop.get("items", use: ShopController.listItems)
+    shop.post("items", use: ShopController.createItem)
+    shop.patch("items", ":itemId", use: ShopController.updateItem)
+    shop.delete("items", ":itemId", use: ShopController.deleteItem)
+    shop.get("balance", use: ShopController.balance)
+    shop.get("orders", use: ShopController.listOrders)
+    shop.get("orders", "all", use: ShopController.listAllOrders)
+    shop.post("orders", use: ShopController.createOrder)
+    shop.patch("orders", ":orderId", "status", use: ShopController.updateOrderStatus)
 
     let projects = jwt.grouped("projects")
     projects.get(use: ProjectController.list)

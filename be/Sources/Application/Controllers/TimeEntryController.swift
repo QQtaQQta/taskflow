@@ -38,6 +38,7 @@ enum TimeEntryController {
         let e = TimeEntry(taskID: tid, userID: uid, spentMinutes: body.spentMinutes, comment: body.comment, startedAt: body.startedAt)
         try await e.save(on: req.db)
         try await resyncSpent(tid, on: req.db)
+        try await PointsService.awardForTimeEntry(e, on: req.db)
         let author = try await User.find(uid, on: req.db)
         struct Out: Encodable {
             var id: UUID
@@ -72,6 +73,7 @@ enum TimeEntryController {
         if let c = body.comment { entry.comment = c }
         try await entry.save(on: req.db)
         try await resyncSpent(entry.$task.id, on: req.db)
+        try await PointsService.recreditTimeEntry(entry, on: req.db)
         struct Out: Encodable { var id: UUID; var spentMinutes: Int; var comment: String }
         let dto = Out(id: eid, spentMinutes: entry.spentMinutes, comment: entry.comment)
         try await AuditService.log(db: req.db, actorId: uid, entityType: "time_entry", entityId: eid, action: "update")
@@ -85,6 +87,8 @@ enum TimeEntryController {
         let adminUser = try await RBACService.isAdmin(userId: uid, on: req.db)
         guard entry.$user.id == uid || adminUser else { throw AppError.forbidden }
         let tid = entry.$task.id
+        let entryId = entry.id!
+        try await PointsService.revokeTimeEntry(entryId, on: req.db)
         try await entry.delete(on: req.db)
         try await resyncSpent(tid, on: req.db)
         try await AuditService.log(db: req.db, actorId: uid, entityType: "time_entry", entityId: eid, action: "delete")

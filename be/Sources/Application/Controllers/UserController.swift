@@ -46,6 +46,12 @@ enum UserController {
         return try Response.json(envelopeOk(rows, meta: meta))
     }
 
+    static func assignableProjects(req: Request) async throws -> Response {
+        try await req.requirePermission(PermissionKey.userManage)
+        let projects = try await UserProjectService.fetchAssignableProjects(on: req.db)
+        return try Response.json(envelopeOk(projects, meta: nil))
+    }
+
     static func create(req: Request) async throws -> Response {
         try await req.requirePermission(PermissionKey.userManage)
         let body = try req.content.decode(UserCreateRequest.self)
@@ -68,6 +74,9 @@ enum UserController {
             isActive: body.isActive ?? true
         )
         try await user.save(on: req.db)
+        if let projectIds = body.projectIds {
+            try await UserProjectService.syncMemberships(userId: user.id!, projectIds: projectIds, on: req.db)
+        }
         try await user.$role.load(on: req.db)
         let dto = UserRowDTO(
             id: user.id!,
@@ -92,7 +101,7 @@ enum UserController {
         let id = try req.parameters.require("userId", as: UUID.self)
         guard let user = try await User.query(on: req.db).excludingDeleted().filter(\.$id == id).with(\.$role).first()
         else { throw AppError.notFound("User not found") }
-        let pcount = try await ProjectMember.query(on: req.db).filter(\.$user.$id == id).count()
+        let projects = try await UserProjectService.fetchUserProjects(userId: id, on: req.db)
         let dto = UserDetailDTO(
             id: user.id!,
             email: user.email,
@@ -100,9 +109,33 @@ enum UserController {
             avatarUrl: user.avatarUrl,
             isActive: user.isActive,
             role: RoleRefDTO(id: user.role.id!, name: user.role.name),
-            projectsCount: pcount
+            projectsCount: projects.count,
+            projects: projects
         )
         return try Response.json(envelopeOk(dto, meta: nil))
+    }
+
+    static func userProjects(req: Request) async throws -> Response {
+        try await req.requirePermission(PermissionKey.userManage)
+        let id = try req.parameters.require("userId", as: UUID.self)
+        guard try await User.query(on: req.db).excludingDeleted().filter(\.$id == id).first() != nil else {
+            throw AppError.notFound("User not found")
+        }
+        let projects = try await UserProjectService.fetchUserProjects(userId: id, on: req.db)
+        return try Response.json(envelopeOk(projects, meta: nil))
+    }
+
+    static func replaceUserProjects(req: Request) async throws -> Response {
+        try await req.requirePermission(PermissionKey.userManage)
+        let id = try req.parameters.require("userId", as: UUID.self)
+        guard try await User.query(on: req.db).excludingDeleted().filter(\.$id == id).first() != nil else {
+            throw AppError.notFound("User not found")
+        }
+        let body = try req.content.decode(UserProjectsPutRequest.self)
+        try await UserProjectService.syncMemberships(userId: id, projectIds: body.projectIds, on: req.db)
+        let projects = try await UserProjectService.fetchUserProjects(userId: id, on: req.db)
+        try await AuditService.log(db: req.db, actorId: try req.requireUserId(), entityType: "user", entityId: id, action: "projects_sync")
+        return try Response.json(envelopeOk(projects, meta: nil))
     }
 
     static func update(req: Request) async throws -> Response {
@@ -119,6 +152,9 @@ enum UserController {
         }
         if let active = body.isActive { user.isActive = active }
         try await user.save(on: req.db)
+        if let projectIds = body.projectIds {
+            try await UserProjectService.syncMemberships(userId: id, projectIds: projectIds, on: req.db)
+        }
         let dto = UserPatchDataDTO(
             id: user.id!,
             email: user.email,

@@ -42,6 +42,8 @@ public func configure(_ app: Application) async throws {
     )
 
     app.migrations.add(CreateSchema())
+    app.migrations.add(AddPointsAndShop())
+    app.migrations.add(AddShopItemObsolete())
     app.migrations.add(SeedRBACAndDemo())
 
     try await app.autoMigrate()

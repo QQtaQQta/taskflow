@@ -31,6 +31,7 @@ struct MeDataDTO: Encodable {
     var avatarUrl: String?
     var role: RoleRefDTO
     var permissions: [String]
+    var pointsBalance: Int
 }
 
 struct RoleRowDTO: Encodable {
@@ -52,6 +53,12 @@ struct UserRowDTO: Encodable {
     var role: RoleRefDTO
 }
 
+struct ProjectRefDTO: Encodable {
+    var id: UUID
+    var key: String
+    var name: String
+}
+
 struct UserDetailDTO: Encodable {
     var id: UUID
     var email: String
@@ -60,6 +67,31 @@ struct UserDetailDTO: Encodable {
     var isActive: Bool
     var role: RoleRefDTO
     var projectsCount: Int
+    var projects: [ProjectRefDTO]
+}
+
+struct PointsBalanceDTO: Encodable {
+    var pointsBalance: Int
+}
+
+struct ShopItemRowDTO: Encodable {
+    var id: UUID
+    var name: String
+    var description: String
+    var pricePoints: Int
+    var isObsolete: Bool
+    var isActive: Bool
+}
+
+struct ShopOrderRowDTO: Encodable {
+    var id: UUID
+    var itemId: UUID
+    var itemName: String
+    var userId: UUID
+    var userFullName: String
+    var deliveryAddress: String
+    var status: String
+    var createdAt: Date?
 }
 
 struct UserPatchDataDTO: Encodable {

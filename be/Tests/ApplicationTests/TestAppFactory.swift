@@ -13,6 +13,7 @@ enum TestAppFactory {
         app.databases.use(.sqlite(.memory), as: .sqlite)
         app.databases.default(to: .sqlite)
         app.migrations.add(CreateSchema())
+        app.migrations.add(AddPointsAndShop())
         app.migrations.add(SeedRBACAndDemo())
         try await app.autoMigrate()
         try await routes(app)

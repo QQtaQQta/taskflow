@@ -65,7 +65,8 @@ enum AuthController {
             fullName: user.fullName,
             avatarUrl: user.avatarUrl,
             role: RoleRefDTO(id: user.role.id!, name: user.role.name),
-            permissions: keys
+            permissions: keys,
+            pointsBalance: user.pointsBalance
         )
         return try Response.json(envelopeOk(dto, meta: nil))
     }

@@ -107,6 +107,19 @@ enum Endpoint {
     case roles(page: Int, perPage: Int, search: String?)
     case updateUser(id: UUID, request: UpdateUserRequest)
     case replaceRolePermissions(roleId: UUID, request: RolePermissionUpdateRequest)
+    case assignableProjects
+    case userDetail(id: UUID)
+    case userProjects(id: UUID)
+    case replaceUserProjects(id: UUID, request: UserProjectsPutRequest)
+    case shopItems
+    case createShopItem(CreateShopItemRequest)
+    case updateShopItem(id: UUID, request: UpdateShopItemRequest)
+    case deleteShopItem(id: UUID)
+    case shopBalance
+    case shopOrders
+    case shopAllOrders
+    case createShopOrder(CreateShopOrderRequest)
+    case updateShopOrderStatus(orderId: UUID, request: ShopOrderStatusRequest)
 
     var method: HTTPMethod {
         switch self {
@@ -114,10 +127,14 @@ enum Endpoint {
              .createTimeEntry, .createEpic, .moveTask, .linkTaskToEpic, .estimateTask,
              .createBoard, .createBoardColumn:
             .post
-        case .createUser:
+        case .createUser, .createShopItem, .createShopOrder:
             .post
-        case .replaceRolePermissions:
+        case .replaceRolePermissions, .replaceUserProjects:
             .put
+        case .updateShopItem, .updateShopOrderStatus:
+            .patch
+        case .deleteShopItem:
+            .delete
         case .updateTask, .updateUser, .updateProject, .updateEpic, .updateBoard, .updateBoardColumn:
             .patch
         case .archiveProject, .archiveTask, .archiveEpic, .archiveBoard, .deleteBoardColumn:
@@ -166,6 +183,19 @@ enum Endpoint {
         case .roles: "/roles"
         case let .updateUser(id, _): "/users/\(id.uuidString)"
         case let .replaceRolePermissions(roleId, _): "/roles/\(roleId.uuidString)/permissions"
+        case .assignableProjects: "/users/assignable-projects"
+        case let .userDetail(id): "/users/\(id.uuidString)"
+        case let .userProjects(id): "/users/\(id.uuidString)/projects"
+        case let .replaceUserProjects(id, _): "/users/\(id.uuidString)/projects"
+        case .shopItems: "/shop/items"
+        case .createShopItem: "/shop/items"
+        case let .updateShopItem(id, _): "/shop/items/\(id.uuidString)"
+        case let .deleteShopItem(id): "/shop/items/\(id.uuidString)"
+        case .shopBalance: "/shop/balance"
+        case .shopOrders: "/shop/orders"
+        case .shopAllOrders: "/shop/orders/all"
+        case .createShopOrder: "/shop/orders"
+        case let .updateShopOrderStatus(orderId, _): "/shop/orders/\(orderId.uuidString)/status"
         }
     }
 
@@ -220,6 +250,11 @@ enum Endpoint {
         case let .updateUser(_, request): try encoder.encode(request)
         case let .createUser(request): try encoder.encode(request)
         case let .replaceRolePermissions(_, request): try encoder.encode(request)
+        case let .replaceUserProjects(_, request): try encoder.encode(request)
+        case let .createShopItem(request): try encoder.encode(request)
+        case let .updateShopItem(_, request): try encoder.encode(request)
+        case let .createShopOrder(request): try encoder.encode(request)
+        case let .updateShopOrderStatus(_, request): try encoder.encode(request)
         default: nil
         }
     }

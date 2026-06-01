@@ -57,9 +57,24 @@ protocol TimeTrackingRepository: Sendable {
 protocol AdminRepository: Sendable {
     func users(search: String?) async throws -> [UserListItem]
     func roles(search: String?) async throws -> [Role]
+    func assignableProjects() async throws -> [ProjectRef]
+    func userDetail(userId: UUID) async throws -> UserDetail
     func createUser(_ request: CreateUserRequest) async throws
     func updateUserRole(userId: UUID, roleId: UUID) async throws
+    func replaceUserProjects(userId: UUID, projectIds: [UUID]) async throws
     func updateRolePermissions(roleId: UUID, permissions: [String]) async throws
+}
+
+protocol ShopRepository: Sendable {
+    func items() async throws -> [ShopItem]
+    func balance() async throws -> Int
+    func myOrders() async throws -> [ShopOrder]
+    func allOrders() async throws -> [ShopOrder]
+    func createItem(_ request: CreateShopItemRequest) async throws -> ShopItem
+    func updateItem(id: UUID, request: UpdateShopItemRequest) async throws -> ShopItem
+    func deleteItem(id: UUID) async throws
+    func createOrder(_ request: CreateShopOrderRequest) async throws -> ShopOrder
+    func updateOrderStatus(orderId: UUID, status: String) async throws -> ShopOrder
 }
 
 final class AuthRepositoryImpl: AuthRepository, @unchecked Sendable {
@@ -288,13 +303,27 @@ final class AdminRepositoryImpl: AdminRepository, @unchecked Sendable {
         try await client.request(.roles(page: 1, perPage: 100, search: search))
     }
 
+    func assignableProjects() async throws -> [ProjectRef] {
+        try await client.request(.assignableProjects)
+    }
+
+    func userDetail(userId: UUID) async throws -> UserDetail {
+        try await client.request(.userDetail(id: userId))
+    }
+
     func createUser(_ request: CreateUserRequest) async throws {
         try await client.requestVoid(.createUser(request))
     }
 
+    func replaceUserProjects(userId: UUID, projectIds: [UUID]) async throws {
+        let _: [ProjectRef] = try await client.request(
+            .replaceUserProjects(id: userId, request: .init(projectIds: projectIds))
+        )
+    }
+
     func updateUserRole(userId: UUID, roleId: UUID) async throws {
         let _: EmptyResponse = try await client.request(
-            .updateUser(id: userId, request: .init(fullName: nil, avatarUrl: nil, roleId: roleId, isActive: nil))
+            .updateUser(id: userId, request: .init(fullName: nil, avatarUrl: nil, roleId: roleId, isActive: nil, projectIds: nil))
         )
     }
 
@@ -302,5 +331,48 @@ final class AdminRepositoryImpl: AdminRepository, @unchecked Sendable {
         let _: RolePermissionsResponse = try await client.request(
             .replaceRolePermissions(roleId: roleId, request: .init(permissions: permissions))
         )
+    }
+}
+
+final class ShopRepositoryImpl: ShopRepository, @unchecked Sendable {
+    private let client: APIClient
+    init(client: APIClient) { self.client = client }
+
+    func items() async throws -> [ShopItem] {
+        try await client.request(.shopItems)
+    }
+
+    func balance() async throws -> Int {
+        let response: PointsBalanceResponse = try await client.request(.shopBalance)
+        return response.pointsBalance
+    }
+
+    func myOrders() async throws -> [ShopOrder] {
+        try await client.request(.shopOrders)
+    }
+
+    func allOrders() async throws -> [ShopOrder] {
+        try await client.request(.shopAllOrders)
+    }
+
+    func createItem(_ request: CreateShopItemRequest) async throws -> ShopItem {
+        try await client.request(.createShopItem(request))
+    }
+
+    func updateItem(id: UUID, request: UpdateShopItemRequest) async throws -> ShopItem {
+        try await client.request(.updateShopItem(id: id, request: request))
+    }
+
+    func deleteItem(id: UUID) async throws {
+        struct DeleteShopItemResponse: Codable { let message: String }
+        let _: DeleteShopItemResponse = try await client.request(.deleteShopItem(id: id))
+    }
+
+    func createOrder(_ request: CreateShopOrderRequest) async throws -> ShopOrder {
+        try await client.request(.createShopOrder(request))
+    }
+
+    func updateOrderStatus(orderId: UUID, status: String) async throws -> ShopOrder {
+        try await client.request(.updateShopOrderStatus(orderId: orderId, request: .init(status: status)))
     }
 }

@@ -238,6 +238,7 @@ enum BoardController {
             task.status = "done"
             task.closedAt = Date()
             try await task.save(on: req.db)
+            try await PointsService.awardForTaskCompletion(taskId: tid, on: req.db)
         }
         try await normalizeOrder(boardId: bid, columnId: body.boardColumnId, on: req.db)
         struct Out: Encodable {

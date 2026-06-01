@@ -1890,6 +1890,10 @@ struct ProfileView: View {
                 if let permissions = user.permissions {
                     Text("Права: \(permissions.joined(separator: ", "))")
                 }
+                if let points = user.pointsBalance {
+                    Text("Баллы: \(points)")
+                        .font(.subheadline)
+                }
                 if user.role.name.lowercased() == "admin" {
                     NavigationLink("Управление ролями и правами") {
                         AdminAccessView(viewModel: .init(repository: adminRepository, currentUserId: user.id))
@@ -1945,7 +1949,9 @@ final class AdminAccessViewModel: ObservableObject {
     @Published var rolePermissions: [UUID: String] = [:]
     @Published var error: String?
     @Published var showCreateUser = false
-    private let repository: AdminRepository
+    @Published var editingUser: UserListItem?
+    @Published var assignableProjects: [ProjectRef] = []
+    let repository: AdminRepository
     let currentUserId: UUID
 
     init(repository: AdminRepository, currentUserId: UUID) {
@@ -1957,8 +1963,10 @@ final class AdminAccessViewModel: ObservableObject {
         do {
             async let fetchedUsers = repository.users(search: nil)
             async let fetchedRoles = repository.roles(search: nil)
+            async let fetchedProjects = repository.assignableProjects()
             users = try await fetchedUsers
             roles = try await fetchedRoles
+            assignableProjects = try await fetchedProjects
             selectedRoles = Dictionary(uniqueKeysWithValues: users.map { ($0.id, $0.role.id) })
         } catch {
             self.error = error.localizedDescription
@@ -1993,12 +2001,29 @@ final class AdminAccessViewModel: ObservableObject {
         }
     }
 
-    func createUser(email: String, password: String, fullName: String, roleId: UUID) async {
+    func createUser(email: String, password: String, fullName: String, roleId: UUID, projectIds: [UUID]) async {
         do {
             try await repository.createUser(
-                .init(email: email, password: password, fullName: fullName, roleId: roleId, isActive: true)
+                .init(
+                    email: email,
+                    password: password,
+                    fullName: fullName,
+                    roleId: roleId,
+                    isActive: true,
+                    projectIds: projectIds.isEmpty ? nil : projectIds
+                )
             )
             users = try await repository.users(search: nil)
+            showCreateUser = false
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func saveUserProjects(userId: UUID, projectIds: [UUID]) async {
+        do {
+            try await repository.replaceUserProjects(userId: userId, projectIds: projectIds)
+            editingUser = nil
         } catch {
             self.error = error.localizedDescription
         }
@@ -2013,8 +2038,17 @@ struct AdminAccessView: View {
             Section("Пользователи и роли") {
                 ForEach(viewModel.users) { user in
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(user.fullName).font(.headline)
-                        Text(user.email).font(.caption).foregroundStyle(.secondary)
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(user.fullName).font(.headline)
+                                Text(user.email).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Проекты") {
+                                viewModel.editingUser = user
+                            }
+                            .buttonStyle(.bordered)
+                        }
                         Picker("Роль", selection: Binding(
                             get: { viewModel.selectedRoles[user.id] ?? user.role.id },
                             set: { viewModel.selectedRoles[user.id] = $0 }
@@ -2062,23 +2096,72 @@ struct AdminAccessView: View {
             }
         }
         .sheet(isPresented: $viewModel.showCreateUser) {
-            AdminCreateUserSheet(roles: viewModel.roles) { email, password, fullName, roleId in
-                Task { await viewModel.createUser(email: email, password: password, fullName: fullName, roleId: roleId) }
+            AdminCreateUserSheet(roles: viewModel.roles, projects: viewModel.assignableProjects) { email, password, fullName, roleId, projectIds in
+                Task { await viewModel.createUser(email: email, password: password, fullName: fullName, roleId: roleId, projectIds: projectIds) }
+            }
+        }
+        .sheet(item: $viewModel.editingUser) { user in
+            AdminEditUserProjectsSheet(
+                user: user,
+                repository: viewModel.repository,
+                allProjects: viewModel.assignableProjects
+            ) { projectIds in
+                Task { await viewModel.saveUserProjects(userId: user.id, projectIds: projectIds) }
             }
         }
         .navigationTitle("Доступы")
     }
 }
 
+struct AdminProjectSelectionSection: View {
+    let projects: [ProjectRef]
+    @Binding var selectedProjectIds: Set<UUID>
+
+    var body: some View {
+        Section {
+            if projects.isEmpty {
+                Text("Нет доступных проектов")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(projects) { project in
+                    Toggle(isOn: Binding(
+                        get: { selectedProjectIds.contains(project.id) },
+                        set: { isOn in
+                            if isOn {
+                                selectedProjectIds.insert(project.id)
+                            } else {
+                                selectedProjectIds.remove(project.id)
+                            }
+                        }
+                    )) {
+                        VStack(alignment: .leading) {
+                            Text(project.name)
+                            Text(project.key).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Проекты")
+        } footer: {
+            if selectedProjectIds.isEmpty {
+                Text("Пользователь не привязан ни к одному проекту.")
+            }
+        }
+    }
+}
+
 struct AdminCreateUserSheet: View {
     let roles: [Role]
-    let onSave: (_ email: String, _ password: String, _ fullName: String, _ roleId: UUID) -> Void
+    let projects: [ProjectRef]
+    let onSave: (_ email: String, _ password: String, _ fullName: String, _ roleId: UUID, _ projectIds: [UUID]) -> Void
     @Environment(\.dismiss) private var dismiss
 
     @State private var email = ""
     @State private var password = ""
     @State private var fullName = ""
     @State private var selectedRoleId: UUID?
+    @State private var selectedProjectIds: Set<UUID> = []
 
     var body: some View {
         NavigationStack {
@@ -2094,6 +2177,7 @@ struct AdminCreateUserSheet: View {
                         Text(role.localizedName).tag(Optional(role.id))
                     }
                 }
+                AdminProjectSelectionSection(projects: projects, selectedProjectIds: $selectedProjectIds)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -2102,13 +2186,546 @@ struct AdminCreateUserSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Сохранить") {
                         guard let selectedRoleId else { return }
-                        onSave(email, password, fullName, selectedRoleId)
+                        onSave(email, password, fullName, selectedRoleId, Array(selectedProjectIds))
                         dismiss()
                     }
                     .disabled(email.isEmpty || password.count < 8 || fullName.isEmpty || selectedRoleId == nil)
                 }
             }
             .navigationTitle("Новый пользователь")
+        }
+    }
+}
+
+struct AdminEditUserProjectsSheet: View {
+    let user: UserListItem
+    let repository: AdminRepository
+    let allProjects: [ProjectRef]
+    let onSave: (_ projectIds: [UUID]) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var selectedProjectIds: Set<UUID> = []
+    @State private var isLoading = true
+    @State private var loadError: String?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isLoading {
+                    ProgressView("Загрузка проектов…")
+                } else {
+                    Form {
+                        Section {
+                            Text(user.fullName).font(.headline)
+                            Text(user.email).foregroundStyle(.secondary)
+                        }
+                        AdminProjectSelectionSection(projects: allProjects, selectedProjectIds: $selectedProjectIds)
+                        if let loadError {
+                            Text(loadError).foregroundStyle(.red)
+                        }
+                    }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Отмена") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Сохранить") {
+                        onSave(Array(selectedProjectIds))
+                        dismiss()
+                    }
+                    .disabled(isLoading)
+                }
+            }
+            .navigationTitle("Проекты пользователя")
+            .task {
+                do {
+                    let detail = try await repository.userDetail(userId: user.id)
+                    selectedProjectIds = Set(detail.projects.map(\.id))
+                    isLoading = false
+                } catch {
+                    loadError = error.localizedDescription
+                    isLoading = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Shop
+
+enum ShopContentTab: String, Hashable, Identifiable {
+    case catalog
+    case myOrders
+    case allOrders
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .catalog: return "Магазин"
+        case .myOrders: return "Мои заказы"
+        case .allOrders: return "Заказы"
+        }
+    }
+}
+
+@MainActor
+final class ShopViewModel: ObservableObject {
+    @Published var selectedTab: ShopContentTab = .catalog
+    @Published var items: [ShopItem] = []
+    @Published var myOrders: [ShopOrder] = []
+    @Published var allOrders: [ShopOrder] = []
+    @Published var pointsBalance: Int = 0
+    @Published var error: String?
+    @Published var showCreateItem = false
+    @Published var editingItem: ShopItem?
+    @Published var orderingItem: ShopItem?
+    @Published var deleteConfirmationItem: ShopItem?
+    @Published var isAdmin = false
+
+    private let shopRepository: ShopRepository
+    private let authRepository: AuthRepository
+    @Published var currentUserId: UUID?
+
+    init(shopRepository: ShopRepository, authRepository: AuthRepository) {
+        self.shopRepository = shopRepository
+        self.authRepository = authRepository
+    }
+
+    var visibleTabs: [ShopContentTab] {
+        isAdmin ? [.catalog, .myOrders, .allOrders] : [.catalog, .myOrders]
+    }
+
+    func load() async {
+        do {
+            let me = try await authRepository.me()
+            currentUserId = me.id
+            isAdmin = me.role.name.lowercased() == "admin"
+            if !visibleTabs.contains(selectedTab) {
+                selectedTab = .catalog
+            }
+            async let fetchedItems = shopRepository.items()
+            async let fetchedMyOrders = shopRepository.myOrders()
+            async let fetchedBalance = shopRepository.balance()
+            items = try await fetchedItems
+            myOrders = try await fetchedMyOrders
+            pointsBalance = try await fetchedBalance
+            if isAdmin {
+                allOrders = try await shopRepository.allOrders()
+            } else {
+                allOrders = []
+            }
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func createItem(name: String, description: String, pricePoints: Int, isObsolete: Bool) async {
+        do {
+            _ = try await shopRepository.createItem(
+                .init(name: name, description: description, pricePoints: pricePoints, isObsolete: isObsolete)
+            )
+            showCreateItem = false
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func updateItem(_ item: ShopItem, name: String, description: String, pricePoints: Int, isObsolete: Bool) async {
+        do {
+            _ = try await shopRepository.updateItem(
+                id: item.id,
+                request: .init(
+                    name: name,
+                    description: description,
+                    pricePoints: pricePoints,
+                    isObsolete: isObsolete,
+                    isActive: true
+                )
+            )
+            editingItem = nil
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func requestDelete(_ item: ShopItem) {
+        deleteConfirmationItem = item
+    }
+
+    func deleteItem(_ item: ShopItem) async {
+        do {
+            try await shopRepository.deleteItem(id: item.id)
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func placeOrder(item: ShopItem, address: String) async {
+        do {
+            _ = try await shopRepository.createOrder(.init(itemId: item.id, deliveryAddress: address))
+            orderingItem = nil
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func updateOrderStatus(order: ShopOrder, to status: String) async {
+        do {
+            _ = try await shopRepository.updateOrderStatus(orderId: order.id, status: status)
+            await load()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func canMarkShipped(order: ShopOrder) -> Bool {
+        isAdmin && order.status == "assembling"
+    }
+
+    func canMarkReceived(order: ShopOrder, currentUserId: UUID) -> Bool {
+        order.status == "shipped" && order.userId == currentUserId
+    }
+}
+
+struct ShopView: View {
+    @StateObject var viewModel: ShopViewModel
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Баланс: \(viewModel.pointsBalance) баллов")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+
+            Picker("Раздел", selection: $viewModel.selectedTab) {
+                ForEach(viewModel.visibleTabs) { tab in
+                    Text(tab.title).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding()
+
+            if let error = viewModel.error {
+                Text(error).foregroundStyle(.red).padding(.horizontal)
+            }
+
+            switch viewModel.selectedTab {
+            case .catalog:
+                shopCatalog
+            case .myOrders:
+                ShopOrdersList(
+                    orders: viewModel.myOrders,
+                    showAdminColumns: false,
+                    viewModel: viewModel
+                )
+            case .allOrders:
+                ShopOrdersList(
+                    orders: viewModel.allOrders,
+                    showAdminColumns: true,
+                    viewModel: viewModel
+                )
+            }
+        }
+        .navigationTitle("Магазин")
+        .toolbar {
+            if viewModel.isAdmin, viewModel.selectedTab == .catalog {
+                Button("Добавить товар") {
+                    viewModel.showCreateItem = true
+                }
+            }
+        }
+        .refreshable { await viewModel.load() }
+        .task { await viewModel.load() }
+        .sheet(isPresented: $viewModel.showCreateItem) {
+            ShopItemFormSheet(title: "Новый товар", isObsolete: false) { name, description, price, obsolete in
+                await viewModel.createItem(name: name, description: description, pricePoints: price, isObsolete: obsolete)
+            }
+        }
+        .sheet(item: $viewModel.editingItem) { item in
+            ShopItemFormSheet(title: "Изменить товар", item: item) { name, description, price, isObsolete in
+                await viewModel.updateItem(item, name: name, description: description, pricePoints: price, isObsolete: isObsolete)
+            }
+        }
+        .sheet(item: $viewModel.orderingItem) { item in
+            ShopOrderSheet(
+                item: item,
+                balance: viewModel.pointsBalance,
+                onOrder: { address in
+                    Task { await viewModel.placeOrder(item: item, address: address) }
+                },
+                onInsufficientPoints: {
+                    viewModel.error = "Недостаточно баллов для покупки этого товара."
+                    viewModel.orderingItem = nil
+                }
+            )
+        }
+        .alert(item: $viewModel.deleteConfirmationItem) { item in
+            Alert(
+                title: Text("Удалить «\(item.name)»?"),
+                message: Text("Если по товару уже есть заказы, товар будет скрыт из каталога."),
+                primaryButton: .destructive(Text("Удалить")) {
+                    Task { await viewModel.deleteItem(item) }
+                },
+                secondaryButton: .cancel(Text("Отмена"))
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var shopCatalog: some View {
+        if viewModel.items.isEmpty {
+            ContentUnavailableView("Магазин пуст", systemImage: "bag")
+        } else {
+            List(viewModel.items) { item in
+                ShopCatalogRow(item: item, viewModel: viewModel)
+            }
+        }
+    }
+}
+
+struct ShopCatalogRow: View {
+    let item: ShopItem
+    @ObservedObject var viewModel: ShopViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(item.name).font(.headline)
+                if item.isObsolete {
+                    Text("Не актуально")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.2))
+                        .clipShape(Capsule())
+                }
+                if item.isActive == false {
+                    Text("Снят с продажи")
+                        .font(.caption)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.red.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+            }
+            Text(item.description).font(.subheadline).foregroundStyle(.secondary)
+            HStack {
+                Text("\(item.pricePoints) баллов")
+                    .font(.subheadline.bold())
+                Spacer()
+                if item.isOrderable {
+                    Button("Потратить баллы") {
+                        if viewModel.pointsBalance < item.pricePoints {
+                            viewModel.error = "Недостаточно баллов для покупки этого товара."
+                        } else {
+                            viewModel.orderingItem = item
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Text("Недоступно для заказа")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if viewModel.isAdmin {
+                HStack(spacing: 12) {
+                    ShopIconActionButton(
+                        systemImage: "pencil",
+                        accessibilityLabel: "Изменить",
+                        tint: .accentColor
+                    ) {
+                        viewModel.editingItem = item
+                    }
+                    ShopIconActionButton(
+                        systemImage: "trash",
+                        accessibilityLabel: "Удалить",
+                        tint: .red
+                    ) {
+                        viewModel.requestDelete(item)
+                    }
+                }
+                .padding(.top, 4)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Compact bordered icon button (~4× smaller than the previous 44 pt control).
+private struct ShopIconActionButton: View {
+    let systemImage: String
+    let accessibilityLabel: String
+    let tint: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 11, height: 11)
+                .padding(4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.roundedRectangle(radius: 6))
+        .controlSize(.mini)
+        .tint(tint)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+struct ShopOrdersList: View {
+    let orders: [ShopOrder]
+    let showAdminColumns: Bool
+    @ObservedObject var viewModel: ShopViewModel
+
+    var body: some View {
+        if orders.isEmpty {
+            ContentUnavailableView("Заказов пока нет", systemImage: "shippingbox")
+        } else {
+            List(orders) { order in
+                VStack(alignment: .leading, spacing: 6) {
+                    if showAdminColumns {
+                        Text("\(order.itemName) / \(order.userFullName)")
+                            .font(.headline)
+                        Text(order.deliveryAddress)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(order.itemName).font(.headline)
+                        Text(order.deliveryAddress).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text("Статус: \(order.localizedStatus)")
+                        .font(.subheadline)
+                    if let userId = viewModel.currentUserId {
+                        if viewModel.canMarkShipped(order: order) {
+                            Button("Отметить отправленным") {
+                                Task { await viewModel.updateOrderStatus(order: order, to: "shipped") }
+                            }
+                        }
+                        if viewModel.canMarkReceived(order: order, currentUserId: userId) {
+                            Button("Подтвердить получение") {
+                                Task { await viewModel.updateOrderStatus(order: order, to: "received") }
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+}
+
+struct ShopItemFormSheet: View {
+    let title: String
+    let initialIsObsolete: Bool
+    let onSave: (String, String, Int, Bool) async -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var isSaving = false
+    @State private var name: String
+    @State private var description: String
+    @State private var priceText: String
+    @State private var isObsolete: Bool
+
+    init(title: String, isObsolete: Bool, onSave: @escaping (String, String, Int, Bool) async -> Void) {
+        self.title = title
+        self.initialIsObsolete = isObsolete
+        self.onSave = onSave
+        _name = State(initialValue: "")
+        _description = State(initialValue: "")
+        _priceText = State(initialValue: "")
+        _isObsolete = State(initialValue: isObsolete)
+    }
+
+    init(title: String, item: ShopItem, onSave: @escaping (String, String, Int, Bool) async -> Void) {
+        self.title = title
+        self.initialIsObsolete = item.isObsolete
+        self.onSave = onSave
+        _name = State(initialValue: item.name)
+        _description = State(initialValue: item.description)
+        _priceText = State(initialValue: "\(item.pricePoints)")
+        _isObsolete = State(initialValue: item.isObsolete)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Название", text: $name)
+                TextField("Описание", text: $description)
+                TextField("Стоимость в баллах", text: $priceText)
+                    .keyboardType(.numberPad)
+                Toggle("Не актуально", isOn: $isObsolete)
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Отмена") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Сохранить") {
+                        guard let price = Int(priceText), price > 0 else { return }
+                        isSaving = true
+                        Task {
+                            await onSave(name, description, price, isObsolete)
+                            isSaving = false
+                            dismiss()
+                        }
+                    }
+                    .disabled(isSaving || name.isEmpty || description.isEmpty || Int(priceText) == nil)
+                }
+            }
+            .navigationTitle(title)
+        }
+    }
+}
+
+struct ShopOrderSheet: View {
+    let item: ShopItem
+    let balance: Int
+    let onOrder: (String) -> Void
+    let onInsufficientPoints: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var address = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Text(item.name).font(.headline)
+                Text("Стоимость: \(item.pricePoints) баллов")
+                Text("Ваш баланс: \(balance)")
+                    .foregroundStyle(balance >= item.pricePoints ? Color.secondary : Color.red)
+                TextField("Адрес доставки", text: $address, axis: .vertical)
+                    .lineLimit(3...6)
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Отмена") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Заказать") {
+                        if balance < item.pricePoints {
+                            onInsufficientPoints()
+                        } else {
+                            onOrder(address)
+                            dismiss()
+                        }
+                    }
+                    .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).count < 5)
+                }
+            }
+            .navigationTitle("Оформление заказа")
         }
     }
 }
